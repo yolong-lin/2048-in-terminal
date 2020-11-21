@@ -8,7 +8,8 @@ class Tile:
     WIDTH  = 8
     HEIGHT = 3
 
-    def __init__(self, i, j):
+    def __init__(self, game, i, j):
+        self.game = game
         self.i = i
         self.j = j
         self.val = 1
@@ -18,23 +19,34 @@ class Tile:
         self.x = x
 
     def reset(self):
+        self.game.empty_tiles.append(self)
         self.val = 1
 
     def shift(self):
         self.val = self.val << 1
+        self.game.is_change = True
 
     def getij(self):
         return (self.i, self.j)
 
-    def refresh(self, stdcsr):
+    def refresh(self):
         if self.val != 1:
-            stdcsr.addstr(self.y, self.x + self.WIDTH // 2 - 4 // 2, "%4d" % self.val)
+            self.game.stdcsr.addstr(self.y, self.x + self.WIDTH // 2 - 4 // 2, "%4d" % self.val)
         else:
             # Clear the previous number
-            stdcsr.addstr(self.y, self.x + self.WIDTH // 2 - 4 // 2, " " * 4)
+            self.game.stdcsr.addstr(self.y, self.x + self.WIDTH // 2 - 4 // 2, " " * 4)
 
-    def swap(self, tile):
-        self.val, tile.val = tile.val, self.val
+    def swap(self, other):
+        if self.val == other.val:
+            return
+        self.val, other.val = other.val, self.val
+        self.game.is_change = True
+        if self.val == 1:
+            self.game.empty_tiles.append(self)
+            self.game.empty_tiles.remove(other)
+        else:
+            self.game.empty_tiles.append(other)
+            self.game.empty_tiles.remove(self)
 
     def __eq__(self, other):
         if isinstance(other, int):
@@ -88,7 +100,7 @@ class Game:
         for i in range(0, self.TILE_SIZE):
             row = []
             for j in range (0, self.TILE_SIZE):
-                tile = Tile(i, j)
+                tile = Tile(self, i, j)
                 row.append(tile)
                 self.empty_tiles.append(tile)
             self.tiles.append(row)
@@ -101,6 +113,8 @@ class Game:
         self.stdcsr = stdcsr
         self.__draw()
 
+        self.__generate()
+        self.is_change = True
         while 1:
             self.__generate()
             self.__refresh()
@@ -142,11 +156,12 @@ class Game:
                 return True
 
     def __generate(self):
-        if self.is_change:
-            self.is_change = False
+        if self.is_change and len(self.empty_tiles) > 0:
             i = random.randrange(0, len(self.empty_tiles))
             i, j = self.empty_tiles.pop(i).getij()
-            self.tiles[i][j].shift()
+            for _ in range(random.randrange(1, 3)):
+                self.tiles[i][j].shift()
+            self.is_change = False
 
     def __draw(self):
         """Resize and Refresh"""
@@ -178,14 +193,13 @@ class Game:
             for j in range(0, self.TILE_SIZE):
                 tx = tx + 1
                 self.tiles[i][j].position(ty, tx)
-                self.tiles[i][j].refresh(self.stdcsr)
+                self.tiles[i][j].refresh()
                 tx = tx + Tile.WIDTH
-        
 
     def __refresh(self):
         for i in range(0, self.TILE_SIZE):
             for j in range(0, self.TILE_SIZE):
-                self.tiles[i][j].refresh(self.stdcsr)
+                self.tiles[i][j].refresh()
 
     def __lose_check(self):
         if len(self.empty_tiles) != 0:
@@ -205,108 +219,64 @@ class Game:
         return False
 
     def __up(self):
-        for i in range(0, self.TILE_SIZE):
-            for j in range(0, self.TILE_SIZE):
-                if self.tiles[i][j] > 1:
-                    # tiles combine
-                    s = i + 1
-                    while s < self.TILE_SIZE:
-                        if self.tiles[s][j] == 1:
-                            s = s + 1
-                            continue
-                        if self.tiles[i][j] == self.tiles[s][j]:
-                            self.tiles[i][j].shift()
-                            self.tiles[s][j].reset()
-                            self.is_change = True
-                            self.empty_tiles.append(self.tiles[s][j])
-                        break
-                    # tiles move
-                    s = i
-                    while s > 0 and self.tiles[s-1][j] == 1:
-                        s = s - 1
-                    if s != i:
-                        self.tiles[i][j].swap(self.tiles[s][j])
-                        self.is_change = True
-                        self.empty_tiles.append(self.tiles[i][j])
-                        self.empty_tiles.remove(self.tiles[s][j])
+        for i in range(self.TILE_SIZE):
+            base = 0
+            for j in range(self.TILE_SIZE):
+                if j == 0:
+                    k = j if self.tiles[j][i] == 1 else j + 1
+                elif self.tiles[j][i] != 1:
+                    if k != 0 and self.tiles[k-1][i] == self.tiles[j][i] and k > base:
+                        self.tiles[k-1][i].shift()
+                        self.tiles[j][i].reset()
+                        base = k
+                    else:
+                        self.tiles[k][i].swap(self.tiles[j][i])
+                        k = k + 1
 
     def __down(self):
-        for i in range(self.TILE_SIZE-1, -1, -1):
-            for j in range(0, self.TILE_SIZE):
-                if self.tiles[i][j] > 1:
-                    # tile combine
-                    s = i - 1
-                    while s >= 0:
-                        if self.tiles[s][j] == 1:
-                            s = s - 1
-                            continue
-                        if self.tiles[i][j] == self.tiles[s][j]:
-                            self.tiles[i][j].shift()
-                            self.tiles[s][j].reset()
-                            self.is_change = True
-                            self.empty_tiles.append(self.tiles[s][j])
-                        break
-                    # tile move
-                    s = i
-                    while s < self.TILE_SIZE-1 and self.tiles[s+1][j] == 1:
-                        s = s + 1
-                    if s != i:
-                        self.tiles[i][j].swap(self.tiles[s][j])
-                        self.is_change = True
-                        self.empty_tiles.append(self.tiles[i][j])
-                        self.empty_tiles.remove(self.tiles[s][j])
+        for i in range(self.TILE_SIZE):
+            base = self.TILE_SIZE - 1
+            for j in range(self.TILE_SIZE-1, -1, -1):
+                if j == self.TILE_SIZE-1:
+                    k = j if self.tiles[j][i] == 1 else j - 1
+                elif self.tiles[j][i] != 1:
+                    if k != self.TILE_SIZE - 1 and self.tiles[k+1][i] == self.tiles[j][i] and k < base:
+                        self.tiles[k+1][i].shift()
+                        self.tiles[j][i].reset()
+                        base = k
+                    else:
+                        self.tiles[k][i].swap(self.tiles[j][i])
+                        k = k - 1
 
     def __left(self):
-        for i in range(0, self.TILE_SIZE):
-            for j in range(0, self.TILE_SIZE):
-                if self.tiles[j][i] > 1: 
-                    # tiles combine
-                    s = i + 1
-                    while s < self.TILE_SIZE:
-                        if self.tiles[j][s] == 1:
-                            s = s + 1
-                            continue
-                        if self.tiles[j][i] == self.tiles[j][s]:
-                            self.tiles[j][i].shift()
-                            self.tiles[j][s].reset()
-                            self.is_change = True
-                            self.empty_tiles.append(self.tiles[j][s])
-                        break
-                    # tiles move
-                    s = i
-                    while s > 0 and self.tiles[j][s-1] == 1:
-                        s = s - 1
-                    if s != i:
-                        self.tiles[j][i].swap(self.tiles[j][s])
-                        self.is_change = True
-                        self.empty_tiles.append(self.tiles[j][i])
-                        self.empty_tiles.remove(self.tiles[j][s])
+        for i in range(self.TILE_SIZE):
+            base = 0
+            for j in range(self.TILE_SIZE):
+                if j == 0:
+                    k = j if self.tiles[i][j] == 1 else j + 1
+                elif self.tiles[i][j] != 1:
+                    if k != 0 and self.tiles[i][k-1] == self.tiles[i][j] and k > base:
+                        self.tiles[i][k-1].shift()
+                        self.tiles[i][j].reset()
+                        base = k
+                    else:
+                        self.tiles[i][k].swap(self.tiles[i][j])
+                        k = k + 1
 
     def __right(self):
-        for i in range(self.TILE_SIZE-1, -1, -1):
-            for j in range(0, self.TILE_SIZE):
-                if self.tiles[j][i] > 1:
-                    # tiles combine
-                    s = i - 1
-                    while s >= 0:
-                        if self.tiles[j][s] == 1:
-                            s = s - 1
-                            continue
-                        if self.tiles[j][i] == self.tiles[j][s]:
-                            self.tiles[j][i].shift()
-                            self.tiles[j][s].reset()
-                            self.is_change = True
-                            self.empty_tiles.append(self.tiles[j][s])
-                        break
-                    # tiles move
-                    s = i 
-                    while s < self.TILE_SIZE-1 and self.tiles[j][s+1] == 1:
-                        s = s + 1
-                    if s != i:
-                        self.tiles[j][i].swap(self.tiles[j][s])
-                        self.is_change = True
-                        self.empty_tiles.append(self.tiles[j][i])
-                        self.empty_tiles.remove(self.tiles[j][s])
+        for i in range(self.TILE_SIZE):
+            base = self.TILE_SIZE - 1
+            for j in range(self.TILE_SIZE-1, -1, -1):
+                if j == self.TILE_SIZE-1:
+                    k = j if self.tiles[i][j] == 1 else j - 1
+                elif self.tiles[i][j] != 1:
+                    if k != self.TILE_SIZE - 1 and self.tiles[i][k+1] == self.tiles[i][j] and k < base:
+                        self.tiles[i][k+1].shift()
+                        self.tiles[i][j].reset()
+                        base = k
+                    else:
+                        self.tiles[i][k].swap(self.tiles[i][j])
+                        k = k - 1
 
 if __name__ == '__main__':
     Game().start()
