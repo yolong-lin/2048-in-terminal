@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import curses, random, time
+import curses, random, time, math
 from curses import wrapper
 
 random.seed(time.time())
@@ -30,11 +30,13 @@ class Tile:
         return (self.i, self.j)
 
     def refresh(self):
-        if self.val != 1:
-            self.game.stdcsr.addstr(self.y, self.x + self.WIDTH // 2 - 4 // 2, "%4d" % self.val)
-        else:
-            # Clear the previous number
-            self.game.stdcsr.addstr(self.y, self.x + self.WIDTH // 2 - 4 // 2, " " * 4)
+        begin_y = self.y + self.HEIGHT // 2
+        begin_x = self.x + self.WIDTH // 2 - 4 // 2
+        color_pair = curses.color_pair(int(math.log(self.val, 2)))
+        for i in range(self.HEIGHT):
+            self.game.stdcsr.addstr(self.y + i, self.x, " " * (self.WIDTH), color_pair)
+            if self.val != 1 and self.y + i == begin_y:
+                self.game.stdcsr.addstr(begin_y, begin_x, "%4d" % self.val, color_pair)
 
     def swap(self, other):
         if self.val == other.val:
@@ -97,7 +99,7 @@ class Game:
         self.empty_tiles = []
         self.is_change = True
 
-        for i in range(0, self.TILE_SIZE):
+        for i in range(self.TILE_SIZE):
             row = []
             for j in range (0, self.TILE_SIZE):
                 tile = Tile(self, i, j)
@@ -110,6 +112,18 @@ class Game:
 
     def __start(self, stdcsr):
         curses.curs_set(0)
+        curses.init_pair(1 , curses.COLOR_BLACK, curses.COLOR_WHITE)
+        curses.init_pair(2 , curses.COLOR_WHITE, curses.COLOR_GREEN)
+        curses.init_pair(3 , curses.COLOR_WHITE, curses.COLOR_CYAN )
+        curses.init_pair(4 , curses.COLOR_WHITE, curses.COLOR_BLUE)
+        curses.init_pair(5 , curses.COLOR_WHITE, curses.COLOR_YELLOW)
+        curses.init_pair(6 , curses.COLOR_BLACK, curses.COLOR_GREEN)
+        curses.init_pair(7 , curses.COLOR_BLACK, curses.COLOR_CYAN )
+        curses.init_pair(8 , curses.COLOR_BLACK, curses.COLOR_BLUE )
+        curses.init_pair(9 , curses.COLOR_BLACK, curses.COLOR_YELLOW)
+        curses.init_pair(10, curses.COLOR_WHITE, curses.COLOR_RED)
+        curses.init_pair(11, curses.COLOR_WHITE, curses.COLOR_MAGENTA)
+
         self.stdcsr = stdcsr
         self.__draw()
 
@@ -144,9 +158,6 @@ class Game:
                     self.__draw()
                 elif act == ord('q'):
                     return
-                else:
-                    stdcsr.addstr(0, 0, str(act))
-                    pass
             
             if self.__win_check():
                 text = "You Win"
@@ -177,43 +188,36 @@ class Game:
             vborder = vborder + "-" * Tile.WIDTH + "+"
             hborder = hborder + " " * Tile.WIDTH + "|"
 
-        for i in range(0, self.height):
+        for i in range(self.height):
             if i % (Tile.HEIGHT + 1) == 0:
                 self.stdcsr.addstr(self.y + i, self.x, vborder)
             else:
                 self.stdcsr.addstr(self.y + i, self.x, hborder)
 
-        ty = self.y
-        for i in range(0, self.TILE_SIZE):
-            if i == 0:
-                ty = ty + 1 + Tile.HEIGHT // 2
-            else:
-                ty = ty + Tile.HEIGHT + 1
-            tx = self.x
-            for j in range(0, self.TILE_SIZE):
-                tx = tx + 1
+        for i in range(self.TILE_SIZE):
+            ty = self.y + 1 if i == 0 else ty + Tile.HEIGHT + 1
+            for j in range(self.TILE_SIZE):
+                tx = self.x + 1 if j == 0 else tx + Tile.WIDTH + 1
                 self.tiles[i][j].position(ty, tx)
-                self.tiles[i][j].refresh()
-                tx = tx + Tile.WIDTH
 
     def __refresh(self):
-        for i in range(0, self.TILE_SIZE):
-            for j in range(0, self.TILE_SIZE):
+        for i in range(self.TILE_SIZE):
+            for j in range(self.TILE_SIZE):
                 self.tiles[i][j].refresh()
 
     def __lose_check(self):
         if len(self.empty_tiles) != 0:
             return False
-        for i in range(0, self.TILE_SIZE):
-            for j in range(0, self.TILE_SIZE):
+        for i in range(self.TILE_SIZE):
+            for j in range(self.TILE_SIZE):
                 if ( i + 1 < self.TILE_SIZE and self.tiles[i][j] == self.tiles[i+1][j] or 
                      j + 1 < self.TILE_SIZE and self.tiles[i][j] == self.tiles[i][j+1] ):
                     return False
         return True
 
     def __win_check(self):
-        for i in range(0, self.TILE_SIZE):
-            for j in range(0, self.TILE_SIZE):
+        for i in range(self.TILE_SIZE):
+            for j in range(self.TILE_SIZE):
                 if self.tiles[i][j] == self.GOAL_VALUE:
                     return True
         return False
@@ -277,6 +281,7 @@ class Game:
                     else:
                         self.tiles[i][k].swap(self.tiles[i][j])
                         k = k - 1
+
 
 if __name__ == '__main__':
     Game().start()
